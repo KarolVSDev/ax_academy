@@ -110,30 +110,6 @@ if treinar_agora:
 
 metadata = carregar_metadata()
 
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown("### Problema de negócio")
-    st.write(
-        "Identificar alunos com risco de reprovação para apoiar decisões "
-        "pedagógicas preventivas."
-    )
-
-with col2:
-    st.markdown("### Técnica aplicada")
-    st.write(
-        "Pipeline de classificação supervisionada com imputação, padronização "
-        "quando necessária, comparação de modelos e escolha pelo F1-score da "
-        "classe Reprovado."
-    )
-
-with col3:
-    st.markdown("### Uso do teste final")
-    st.write(
-        "O conjunto de teste fica separado do treinamento. A banca escolhe um "
-        "percentual, e o sistema sorteia essa fração para inferência em tempo real."
-    )
-
 st.divider()
 
 if not arquivo_existe(TRAIN_VALIDATION_FILE) or not arquivo_existe(FINAL_TEST_FILE):
@@ -219,41 +195,161 @@ with tab1:
     )
 
 with tab2:
-    st.markdown("#### Classes reais, classes preditas e probabilidade")
-    colunas_prioritarias = [
-        "id_aluno",
-        "valor_real",
-        "valor_previsto",
-        "acertou",
-        "frequencia_percent",
-        "faltas",
-        "atrasos",
-        "media",
-        "risco_academico",
-    ]
-
-    colunas_prob = [col for col in df_predicoes.columns if col.startswith("prob_")]
-    colunas_exibir = [
-        col for col in colunas_prioritarias + colunas_prob if col in df_predicoes.columns
-    ]
-
-    st.dataframe(
-        df_predicoes[colunas_exibir],
-        width="stretch",
-        hide_index=True,
+    st.markdown("### Simulação individual da predição")
+    st.write(
+        "Selecione um aluno da amostra para visualizar quais dados entram no modelo "
+        "e qual é a saída gerada pela predição."
     )
 
+    df_visual = df_predicoes.copy()
+
+    # Garante que existe uma coluna de identificação para exibição
+    if "id_aluno" in df_visual.columns:
+        opcoes_alunos = df_visual["id_aluno"].tolist()
+
+        aluno_selecionado = st.selectbox(
+            "Selecione o aluno para análise",
+            opcoes_alunos,
+        )
+
+        aluno = df_visual[df_visual["id_aluno"] == aluno_selecionado].iloc[0]
+    else:
+        opcoes_alunos = df_visual.index.tolist()
+
+        aluno_selecionado = st.selectbox(
+            "Selecione o registro para análise",
+            opcoes_alunos,
+        )
+
+        aluno = df_visual.loc[aluno_selecionado]
+
+    st.divider()
+
+    col_entrada, col_saida = st.columns([1.2, 1])
+
+    with col_entrada:
+        st.markdown("#### Entrada do modelo")
+        st.caption("Dados do aluno usados para gerar a predição.")
+
+        c1, c2, c3 = st.columns(3)
+
+        if "frequencia_percent" in aluno:
+            c1.metric("Frequência", f"{aluno['frequencia_percent']:.1f}%")
+
+        if "faltas" in aluno:
+            c2.metric("Faltas", int(aluno["faltas"]))
+
+        if "atrasos" in aluno:
+            c3.metric("Atrasos", int(aluno["atrasos"]))
+
+        c4, c5, c6 = st.columns(3)
+
+        if "media" in aluno:
+            c4.metric("Média", f"{aluno['media']:.2f}")
+
+        if "risco_academico" in aluno:
+            c5.metric("Risco acadêmico", int(aluno["risco_academico"]))
+
+        if "valor_real" in aluno:
+            c6.metric("Classe real", aluno["valor_real"])
+
+        st.info(
+            "Essas informações representam o perfil acadêmico do aluno. "
+            "O modelo utiliza esses dados para estimar se ele está em situação "
+            "de aprovação ou risco de reprovação."
+        )
+
+    with col_saida:
+        st.markdown("#### Saída do modelo")
+        st.caption("Resultado gerado pela inteligência artificial.")
+
+        classe_prevista = aluno.get("valor_previsto", "Não disponível")
+        classe_real = aluno.get("valor_real", "Não disponível")
+        acertou = aluno.get("acertou", None)
+
+        prob_reprovado = aluno.get("prob_Reprovado", None)
+        prob_aprovado = aluno.get("prob_Aprovado", None)
+
+        if classe_prevista == "Reprovado":
+            st.error(f"Previsão do modelo: {classe_prevista}")
+        else:
+            st.success(f"Previsão do modelo: {classe_prevista}")
+
+        if prob_reprovado is not None:
+            st.metric(
+                "Probabilidade de reprovação",
+                f"{prob_reprovado * 100:.2f}%"
+            )
+
+            st.progress(float(prob_reprovado))
+
+            if prob_reprovado >= 0.70:
+                st.warning("Status: alto risco pedagógico")
+                st.write(
+                    "Recomendação: acompanhar o aluno de forma preventiva, "
+                    "verificar frequência, desempenho e possíveis dificuldades."
+                )
+            elif prob_reprovado >= 0.40:
+                st.info("Status: risco moderado")
+                st.write(
+                    "Recomendação: monitorar o aluno e observar evolução nas próximas avaliações."
+                )
+            else:
+                st.success("Status: baixo risco pedagógico")
+                st.write(
+                    "Recomendação: manter acompanhamento regular."
+                )
+
+        if acertou is not None:
+            if bool(acertou):
+                st.success("O modelo acertou esta predição.")
+            else:
+                st.error("O modelo errou esta predição.")
+
+        st.caption(
+            f"Classe real: {classe_real} | Classe prevista: {classe_prevista}"
+        )
+
+    st.divider()
+
+    with st.expander("Ver tabela técnica com todas as predições"):
+        st.markdown("#### Classes reais, classes preditas e probabilidades")
+
+        colunas_prioritarias = [
+            "id_aluno",
+            "valor_real",
+            "valor_previsto",
+            "acertou",
+            "frequencia_percent",
+            "faltas",
+            "atrasos",
+            "media",
+            "risco_academico",
+        ]
+
+        colunas_prob = [
+            col for col in df_predicoes.columns if col.startswith("prob_")
+        ]
+
+        colunas_exibir = [
+            col for col in colunas_prioritarias + colunas_prob
+            if col in df_predicoes.columns
+        ]
+
+        st.dataframe(
+            df_predicoes[colunas_exibir],
+            width="stretch",
+            hide_index=True,
+        )
+
 with tab3:
-    csv = df_predicoes.to_csv(index=False, encoding="utf-8-sig")
+    st.markdown("### Download dos resultados")
+
+    csv_predicoes = df_predicoes.to_csv(index=False).encode("utf-8")
+
     st.download_button(
         label="Baixar predições da amostra em CSV",
-        data=csv,
+        data=csv_predicoes,
         file_name="predicoes_amostra.csv",
         mime="text/csv",
     )
-
-st.divider()
-st.markdown(
-    "Desenvolvido por Ana Karoline como parte do projeto de Risco Pedagógico. "
-    "Código disponível no [GitHub])."
-)
